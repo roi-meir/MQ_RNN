@@ -1,13 +1,7 @@
-import os
 from typing import List
 
 import numpy as np
 import torch
-from torch import nn
-import torch.nn.functional as F
-from torchvision.datasets import MNIST
-from torch.utils.data import DataLoader, random_split
-from torchvision import transforms
 import pytorch_lightning as pl
 
 from decoder import QuantileDecoder, ContextDecoder
@@ -22,7 +16,7 @@ class MQ_RNN(pl.LightningModule):
                  num_layers: int = 1,
                  hidden_units: int = 8,
                  covariate_size: int = 0,
-                 quantiles: List[float] = (0.5,),
+                 quantiles: List[float] = (0.5, 0.8),
                  context_size: int = 1,
                  lr=1e-3,
                  ):
@@ -68,7 +62,6 @@ class MQ_RNN(pl.LightningModule):
         local_contexts = context[:, self.context_size:]
 
         quantiles_output = []
-        # import IPython;IPython.embed()
         for horizon in range(self.horizon_size):
             start = horizon * self.context_size
             end = start + self.context_size
@@ -81,6 +74,8 @@ class MQ_RNN(pl.LightningModule):
 
         if self.number_of_quantile == 1:
             output = output.unsqueeze(-1)
+
+        output = output.view(x.shape[0], self.horizon_size, self.number_of_quantile)
 
         return output
 
@@ -106,7 +101,6 @@ class MQ_RNN(pl.LightningModule):
 
     def loss(self, quantiles_output, y):
         quantiles = torch.tensor(self.quantiles, dtype=quantiles_output.dtype, requires_grad=False).to(quantiles_output.device)
-        # Distribution with generated `mu` and `sigma`
 
         e = y - quantiles_output
         loss = torch.max(quantiles * e, (quantiles - 1) * e)
