@@ -1,3 +1,4 @@
+import numpy as np
 import torch
 from torch.utils.data import Dataset
 import pandas as pd
@@ -44,10 +45,10 @@ class ElectricityDataset(Dataset):
 
         # TODO: delete or support
         # Adding calendar features
-        # self._df["yearly_cycle"] = np.sin(2 * np.pi * self._df.index.dayofyear / 366)
-        # self._df["weekly_cycle"] = np.sin(2 * np.pi * self._df.index.dayofweek / 7)
-        # self._df["daily_cycle"] = np.sin(2 * np.pi * self._df.index.hour / 24)
-        # self.calendar_features = ["yearly_cycle", "weekly_cycle", "daily_cycle"]
+        self._df["yearly_cycle"] = np.sin(2 * np.pi * self._df.index.dayofyear / 366)
+        self._df["weekly_cycle"] = np.sin(2 * np.pi * self._df.index.dayofweek / 7)
+        self._df["daily_cycle"] = np.sin(2 * np.pi * self._df.index.hour / 24)
+        self.calendar_features = ["yearly_cycle", "weekly_cycle", "daily_cycle"]
 
     def __len__(self):
         return self.samples.shape[0]
@@ -58,8 +59,8 @@ class ElectricityDataset(Dataset):
         hs, he = start_ts, start_ts + self.hist_len - self.offset
         fs, fe = he + self.offset, he + self.fct_len
 
-        hist_data = self._df.loc[hs:, [household]].iloc[:self._history_length]
-        fct_data = self._df.loc[fs:, [household]].iloc[:self._forcasting_length]
+        hist_data = self._df.loc[hs:, [household] + self.calendar_features].iloc[:self._history_length]
+        fct_data = self._df.loc[fs:, [household] + self.calendar_features].iloc[:self._forcasting_length]
 
         return (torch.Tensor(hist_data.values),
                 torch.Tensor(fct_data.values))

@@ -15,12 +15,13 @@ class MQ_RNN(pl.LightningModule):
                  input_size: int = 4,
                  num_layers: int = 1,
                  hidden_units: int = 8,
-                 covariate_size: int = 0,
+                 covariate_size: int = 3,
                  quantiles: List[float] = (0.5, 0.8),
                  context_size: int = 1,
                  lr=1e-3,
                  ):
         super().__init__()
+        assert input_size == 1 + covariate_size
 
         self.hist_len = hist_len
         self.horizon_size = horizon_size
@@ -53,11 +54,17 @@ class MQ_RNN(pl.LightningModule):
                                                 context_size=context_size)
 
     def forward(self, x):
-        encoder_output = self.encoder(x)
+
+        history_data = x[:, :self.hist_len, :]
+        future_covariates = x[:, self.hist_len:, 1:]
+        encoder_output = self.encoder(history_data)
         hidden_state = encoder_output[1][0]
 
-        context = self.context_decoder(hidden_state)
-        # context = context.view(context.shape[0], self.horizon_size + 1, self.context_size)
+        future_covariates_flatten = future_covariates.reshape(future_covariates.shape[0], self.horizon_size * self.covariate_size)
+        context_decoder_input = torch.cat([hidden_state,
+                                           future_covariates_flatten], dim=-1)
+        context = self.context_decoder(context_decoder_input)
+
         global_context = context[:, :self.context_size]
         local_contexts = context[:, self.context_size:]
 
@@ -65,7 +72,8 @@ class MQ_RNN(pl.LightningModule):
         for horizon in range(self.horizon_size):
             start = horizon * self.context_size
             end = start + self.context_size
-            quantile_decoder_input = torch.cat([global_context, local_contexts[:, start:end]], dim=1)
+            covariates = future_covariates_flatten[:, horizon*self.covariate_size: (horizon+1) * self.covariate_size]
+            quantile_decoder_input = torch.cat([global_context, local_contexts[:, start:end], covariates], dim=1)
             quantile_output = self.quantile_decoder(quantile_decoder_input)
 
             quantiles_output.append(quantile_output)
@@ -81,7 +89,7 @@ class MQ_RNN(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         combined_input = torch.cat(batch, dim=1)
-        quantiles = self(combined_input[:, :self.hist_len, :])
+        quantiles = self(combined_input)
         loss = self.loss(quantiles, combined_input[:, self.hist_len:, [0]])
         self.log('train_loss', loss)
         return loss
@@ -89,7 +97,7 @@ class MQ_RNN(pl.LightningModule):
     def validation_step(self, batch, batch_idx):
         combined_input = torch.cat(batch, dim=1)
 
-        quantiles = self(combined_input[:, :self.hist_len, :])
+        quantiles = self(combined_input)
 
         loss = self.loss(quantiles, combined_input[:, self.hist_len:, [0]])
         self.log('val_logprob', loss, prog_bar=True)
