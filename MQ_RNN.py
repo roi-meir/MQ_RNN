@@ -54,43 +54,46 @@ class MQ_RNN(pl.LightningModule):
                                                 context_size=context_size)
 
     def forward(self, x):
-
         history_data = x[:, :self.hist_len, :]
-        future_covariates = x[:, self.hist_len:, 1:]
         encoder_output = self.encoder(history_data)
-        hidden_state = encoder_output[1][0]
 
-        future_covariates_flatten = future_covariates.reshape(future_covariates.shape[0], self.horizon_size * self.covariate_size)
-        context_decoder_input = torch.cat([hidden_state,
-                                           future_covariates_flatten], dim=-1)
-        context = self.context_decoder(context_decoder_input)
+        outputs = []
+        for i in range(self.hist_len):
+            hidden_state = encoder_output[0][:, i, :]
+            future_covariates = x[:, i + 1:i + 1 + self.horizon_size, 1:]
+            future_covariates_flatten = future_covariates.reshape(future_covariates.shape[0],
+                                                                  self.horizon_size * self.covariate_size)
+            context_decoder_input = torch.cat([hidden_state,
+                                               future_covariates_flatten], dim=-1)
+            context = self.context_decoder(context_decoder_input)
 
-        global_context = context[:, :self.context_size]
-        local_contexts = context[:, self.context_size:]
+            global_context = context[:, :self.context_size]
+            local_contexts = context[:, self.context_size:]
 
-        quantiles_output = []
-        for horizon in range(self.horizon_size):
-            start = horizon * self.context_size
-            end = start + self.context_size
-            covariates = future_covariates_flatten[:, horizon*self.covariate_size: (horizon+1) * self.covariate_size]
-            quantile_decoder_input = torch.cat([global_context, local_contexts[:, start:end], covariates], dim=1)
-            quantile_output = self.quantile_decoder(quantile_decoder_input)
+            quantiles_output = []
+            for horizon in range(self.horizon_size):
+                start = horizon * self.context_size
+                end = start + self.context_size
+                covariates = future_covariates_flatten[:, horizon*self.covariate_size: (horizon+1) * self.covariate_size]
+                quantile_decoder_input = torch.cat([global_context, local_contexts[:, start:end], covariates], dim=1)
+                quantile_output = self.quantile_decoder(quantile_decoder_input)
 
-            quantiles_output.append(quantile_output)
+                quantiles_output.append(quantile_output)
 
-        output = torch.cat(quantiles_output, -1)
+            output = torch.cat(quantiles_output, -1)
+            if self.number_of_quantile == 1:
+                output = output.unsqueeze(-1)
 
-        if self.number_of_quantile == 1:
-            output = output.unsqueeze(-1)
+            output = output.view(x.shape[0], self.horizon_size, self.number_of_quantile)
 
-        output = output.view(x.shape[0], self.horizon_size, self.number_of_quantile)
+            outputs.append(output)
 
-        return output
+        return torch.stack(outputs, dim=1)
 
     def training_step(self, batch, batch_idx):
         combined_input = torch.cat(batch, dim=1)
         quantiles = self(combined_input)
-        loss = self.loss(quantiles, combined_input[:, self.hist_len:, [0]])
+        loss = self.loss(quantiles, combined_input[:, :, [0]])
         self.log('train_loss', loss)
         return loss
 
@@ -99,7 +102,7 @@ class MQ_RNN(pl.LightningModule):
 
         quantiles = self(combined_input)
 
-        loss = self.loss(quantiles, combined_input[:, self.hist_len:, [0]])
+        loss = self.loss(quantiles, combined_input[:, :, [0]])
         self.log('val_logprob', loss, prog_bar=True)
         return loss
 
@@ -108,11 +111,18 @@ class MQ_RNN(pl.LightningModule):
         return optimizer
 
     def loss(self, quantiles_output, y):
-        quantiles = torch.tensor(self.quantiles, dtype=quantiles_output.dtype, requires_grad=False).to(quantiles_output.device)
+        losses = []
+        quantiles = torch.tensor(self.quantiles, dtype=quantiles_output[0].dtype, requires_grad=False).to(
+            quantiles_output.device)
 
-        e = y - quantiles_output
-        loss = torch.max(quantiles * e, (quantiles - 1) * e)
+        for i in range(quantiles_output.shape[2]):
+            future = y[:, 1 + i: 1 + i + self.horizon_size, :]
+            quantiles_result = quantiles_output[:, i, :, :]
+            e = future - quantiles_result
+            loss = torch.max(quantiles * e, (quantiles - 1) * e)
 
-        return torch.mean(loss)
+            losses.append(loss)
+
+        return torch.mean(torch.stack(losses))
 
 

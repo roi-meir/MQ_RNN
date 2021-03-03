@@ -22,25 +22,23 @@ def load_data():
     return eldata
 
 
-def parse_args():
+def parse_args(args=None):
     parser = argparse.ArgumentParser()
     parser.add_argument('--number-of-gpus', default=0, type=int)
-    return parser.parse_args()
+    return parser.parse_args(args=args)
 
 
-def main():
-    args = parse_args()
+def main(args):
     eldata = load_data()
     scaled_data = eldata / eldata[eldata != 0].mean() - 1
 
     # TODO: change number of samples
     dm = ElectricityDataModule(scaled_data, number_of_samples=50)
-    model = MQ_RNN(lr=1e-3, hidden_units=64, num_layers=1, input_size=4, context_size=4)
-    trainer = pl.Trainer(max_epochs=2, progress_bar_refresh_rate=1, gpus=args.number_of_gpus)
+    model = MQ_RNN(lr=1e-3, hidden_units=64, num_layers=1, input_size=4, context_size=5)
+    trainer = pl.Trainer(max_epochs=2, progress_bar_refresh_rate=1, gpus=args.number_of_gpus, profiler=True)
     trainer.fit(model, dm)
-    import IPython;IPython.embed()
-
+    return scaled_data, dm, model, trainer
 
 
 if __name__ == '__main__':
-    main()
+    main(parse_args())

@@ -16,7 +16,7 @@ class ElectricityDataModule(pl.LightningDataModule):
                  batch_size: int = 64,
                  history_length: int = 168,
                  forcasting_length: int = 24,
-                 workers=4):
+                 workers=6):
 
         super().__init__()
 
