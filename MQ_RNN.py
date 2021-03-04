@@ -115,7 +115,7 @@ class MQ_RNN(pl.LightningModule):
         quantiles = torch.tensor(self.quantiles, dtype=quantiles_output[0].dtype, requires_grad=False).to(
             quantiles_output.device)
 
-        for i in range(quantiles_output.shape[2]):
+        for i in range(quantiles_output.shape[1]):
             future = y[:, 1 + i: 1 + i + self.horizon_size, :]
             quantiles_result = quantiles_output[:, i, :, :]
             e = future - quantiles_result
