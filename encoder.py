@@ -4,15 +4,10 @@ from torch import nn
 
 class Encoder(nn.Module):
     def __init__(self,
-                 hist_len=168,
-                 horizon_size=24,
                  input_size=4,
                  num_layers=1,
                  hidden_units=8):
         super().__init__()
-
-        self.hist_len = hist_len
-        self.horizon_size = horizon_size
         self.input_size = input_size
         self.num_layers = num_layers
         self.hidden_units = hidden_units

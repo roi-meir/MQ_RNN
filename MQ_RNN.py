@@ -38,9 +38,7 @@ class MQ_RNN(pl.LightningModule):
         self.context_size = context_size
         self.lr = lr
 
-        self.encoder = Encoder(hist_len=hist_len,
-                               horizon_size=horizon_size,
-                               input_size=input_size,
+        self.encoder = Encoder(input_size=input_size,
                                num_layers=num_layers,
                                hidden_units=hidden_units)
 
@@ -56,8 +54,9 @@ class MQ_RNN(pl.LightningModule):
     def forward(self, x):
         history_data = x[:, :self.hist_len, :]
         encoder_output = self.encoder(history_data)
-
         outputs = []
+
+        # Forking sequence
         for i in range(self.hist_len):
             hidden_state = encoder_output[0][:, i, :]
             future_covariates = x[:, i + 1:i + 1 + self.horizon_size, 1:]
@@ -71,6 +70,7 @@ class MQ_RNN(pl.LightningModule):
             local_contexts = context[:, self.context_size:]
 
             quantiles_output = []
+            # Compute quantile for each horizon
             for horizon in range(self.horizon_size):
                 start = horizon * self.context_size
                 end = start + self.context_size
